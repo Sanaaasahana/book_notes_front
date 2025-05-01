@@ -1,182 +1,223 @@
-// Configuration - API Base URL
-window.API_BASE_URL = window.API_BASE_URL || 'https://backend-cpn2.onrender.com'; // Set your backend URL here
+// Configuration - API Base URL with environment awareness
+window.API_BASE_URL = window.API_BASE_URL || (function() {
+  // Auto-detect environment
+  const isLocal = window.location.hostname === 'localhost' || 
+                 window.location.hostname === '127.0.0.1';
+  return isLocal ? 'http://localhost:5000' : 'https://backend-cpn2.onrender.com';
+})();
 
-// Core Application - Scoped in IIFE to avoid global pollution
+// Core Application
 (function() {
-  // State Management
-  let currentUser = null;
+  // State Management with persistence
+  const state = {
+    currentUser: null,
+    get user() {
+      return this.currentUser || JSON.parse(localStorage.getItem('user'));
+    },
+    set user(userData) {
+      this.currentUser = userData;
+      if (userData) {
+        localStorage.setItem('user', JSON.stringify(userData));
+      } else {
+        localStorage.removeItem('user');
+      }
+    }
+  };
+
+  // DOM Elements cache
+  const elements = {
+    nav: document.getElementById('nav'),
+    mainContent: document.getElementById('main-content')
+  };
 
   // Authentication Functions
   function checkAuth() {
     const token = localStorage.getItem('token');
-    const userData = localStorage.getItem('user');
-    
-    if (token && userData) {
-      try {
-        currentUser = JSON.parse(userData);
+    try {
+      if (token) {
+        state.user = JSON.parse(localStorage.getItem('user'));
         showAuthenticatedViews();
         loadDashboard();
-      } catch (error) {
-        console.error('Error parsing user data:', error);
-        logout();
+        return;
       }
-    } else {
-      showUnauthenticatedViews();
+    } catch (error) {
+      console.error('Auth state error:', error);
+      clearAuthState();
+    }
+    showUnauthenticatedViews();
+    loadLogin();
+  }
+
+  function clearAuthState() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    state.user = null;
+  }
+
+  // View Management with debouncing
+  const viewManager = {
+    showAuthenticatedViews() {
+      document.querySelectorAll('.auth-only').forEach(el => {
+        el?.style.setProperty('display', 'block', 'important');
+      });
+      document.querySelectorAll('.guest-only').forEach(el => {
+        el?.style.setProperty('display', 'none', 'important');
+      });
+    },
+    showUnauthenticatedViews() {
+      document.querySelectorAll('.auth-only').forEach(el => {
+        el?.style.setProperty('display', 'none', 'important');
+      });
+      document.querySelectorAll('.guest-only').forEach(el => {
+        el?.style.setProperty('display', 'block', 'important');
+      });
+    }
+  };
+
+  // Enhanced API Client
+  const apiClient = {
+    async request(endpoint, { method = 'GET', body, headers = {} } = {}) {
+      const url = `${window.API_BASE_URL}${endpoint}`;
+      const config = {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        },
+        credentials: 'include'
+      };
+
+      if (body) config.body = JSON.stringify(body);
+
+      try {
+        const response = await fetch(url, config);
+        
+        if (!response.ok) {
+          const error = new Error(`HTTP error! status: ${response.status}`);
+          error.response = response;
+          throw error;
+        }
+
+        const contentType = response.headers.get('content-type');
+        if (contentType?.includes('application/json')) {
+          return await response.json();
+        }
+        return await response.text();
+      } catch (error) {
+        console.error(`API Error at ${endpoint}:`, error);
+        throw error;
+      }
+    }
+  };
+
+  // Auth Handlers with better validation
+  async function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email')?.value.trim();
+    const password = document.getElementById('login-password')?.value;
+
+    if (!email || !password) {
+      showAlert('Please fill in all fields', 'error');
+      return;
+    }
+
+    try {
+      const data = await apiClient.request('/api/auth/login', {
+        method: 'POST',
+        body: { email, password }
+      });
+
+      localStorage.setItem('token', data.token);
+      state.user = data.user;
+      setupNavigation();
+      viewManager.showAuthenticatedViews();
+      loadDashboard();
+      showAlert('Login successful!', 'success');
+    } catch (error) {
+      const message = error.response?.status === 401 
+        ? 'Invalid credentials' 
+        : 'Login failed. Please try again.';
+      showAlert(message, 'error');
+    }
+  }
+
+  async function handleRegister(e) {
+    e.preventDefault();
+    const username = document.getElementById('register-username')?.value.trim();
+    const email = document.getElementById('register-email')?.value.trim();
+    const password = document.getElementById('register-password')?.value;
+
+    if (!username || !email || !password) {
+      showAlert('Please fill in all fields', 'error');
+      return;
+    }
+
+    if (password.length < 6) {
+      showAlert('Password must be at least 6 characters', 'error');
+      return;
+    }
+
+    try {
+      const data = await apiClient.request('/api/auth/register', {
+        method: 'POST',
+        body: { username, email, password }
+      });
+
+      localStorage.setItem('token', data.token);
+      state.user = data.user;
+      setupNavigation();
+      viewManager.showAuthenticatedViews();
+      loadDashboard();
+      showAlert('Registration successful!', 'success');
+    } catch (error) {
+      const message = error.response?.status === 409 
+        ? 'User already exists' 
+        : 'Registration failed. Please try again.';
+      showAlert(message, 'error');
+    }
+  }
+
+  async function logout() {
+    try {
+      await apiClient.request('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      clearAuthState();
+      setupNavigation();
+      viewManager.showUnauthenticatedViews();
       loadLogin();
     }
   }
 
-  function setupNavigation() {
-    const nav = document.getElementById('nav');
-    if (!nav) {
-      console.error('Navigation element not found');
-      return;
-    }
+  // UI Helpers
+  function showAlert(message, type = 'info') {
+    // Implement your alert system (could be toast notifications)
+    alert(`${type.toUpperCase()}: ${message}`);
+  }
 
-    nav.innerHTML = currentUser ? `
+  function setupNavigation() {
+    if (!elements.nav) return;
+    
+    elements.nav.innerHTML = state.user ? `
       <a href="#" onclick="loadDashboard()">Dashboard</a>
       <a href="#" onclick="loadBookForm()">Add Book</a>
       <a href="#" onclick="logout()">Logout</a>
-      <span>Welcome, ${currentUser.username}</span>
+      <span>Welcome, ${state.user.username}</span>
     ` : `
       <a href="#" onclick="loadLogin()">Login</a>
       <a href="#" onclick="loadRegister()">Register</a>
     `;
   }
 
-  // View Management
-  function showAuthenticatedViews() {
-    document.querySelectorAll('.auth-only').forEach(el => {
-      if (el) el.style.display = 'block';
-    });
-    document.querySelectorAll('.guest-only').forEach(el => {
-      if (el) el.style.display = 'none';
-    });
-  }
-
-  function showUnauthenticatedViews() {
-    document.querySelectorAll('.auth-only').forEach(el => {
-      if (el) el.style.display = 'none';
-    });
-    document.querySelectorAll('.guest-only').forEach(el => {
-      if (el) el.style.display = 'block';
-    });
-  }
-
-  // Auth Handlers
-  async function handleLogin(e) {
-    e.preventDefault();
-    const email = document.getElementById('login-email')?.value;
-    const password = document.getElementById('login-password')?.value;
-
-    if (!email || !password) {
-      alert('Please fill in all fields');
-      return;
-    }
-
-    try {
-      const response = await fetch(`${window.API_BASE_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email, password })
-      });
-
-      // Check response content type
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        throw new Error(text || 'Server returned non-JSON response');
-      }
-
-      const data = await response.json();
-      
-      if (response.ok) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        currentUser = data.user;
-        setupNavigation();
-        showAuthenticatedViews();
-        loadDashboard();
-      } else {
-        alert(data.error || 'Login failed');
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-      alert(error.message.includes('<!DOCTYPE') ? 'Server error occurred' : error.message);
-    }
-  }
-
-  async function handleRegister(e) {
-    e.preventDefault();
-    const username = document.getElementById('register-username')?.value;
-    const email = document.getElementById('register-email')?.value;
-    const password = document.getElementById('register-password')?.value;
-
-    if (!username || !email || !password) {
-      alert('Please fill in all fields');
-      return;
-    }
-
-    try {
-      const response = await fetch(`${window.API_BASE_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ username, email, password })
-      });
-
-      // Check response content type
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        throw new Error(text || 'Server returned non-JSON response');
-      }
-
-      const data = await response.json();
-      
-      if (response.ok) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        currentUser = data.user;
-        setupNavigation();
-        showAuthenticatedViews();
-        loadDashboard();
-      } else {
-        alert(data.error || 'Registration failed');
-      }
-    } catch (error) {
-      console.error('Registration error:', error);
-      alert(error.message.includes('<!DOCTYPE') ? 'Server error occurred' : error.message);
-    }
-  }
-
-  function logout() {
-    fetch(`${window.API_BASE_URL}/api/auth/logout`, {
-      method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include'
-    })
-    .catch(error => console.error('Logout error:', error))
-    .finally(() => {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      currentUser = null;
-      setupNavigation();
-      showUnauthenticatedViews();
-      loadLogin();
-    });
-  }
-
-  // UI Loaders
-  function loadLogin() {
-    const mainContent = document.getElementById('main-content');
-    if (!mainContent) return;
-
-    mainContent.innerHTML = `
+  // UI Loaders with template caching
+  const templates = {
+    login: `
       <div class="auth-form">
         <h2>Login</h2>
         <form id="login-form">
@@ -192,19 +233,8 @@ window.API_BASE_URL = window.API_BASE_URL || 'https://backend-cpn2.onrender.com'
         </form>
         <p>Don't have an account? <a href="#" onclick="loadRegister()">Register</a></p>
       </div>
-    `;
-
-    const form = document.getElementById('login-form');
-    if (form) {
-      form.addEventListener('submit', handleLogin);
-    }
-  }
-
-  function loadRegister() {
-    const mainContent = document.getElementById('main-content');
-    if (!mainContent) return;
-
-    mainContent.innerHTML = `
+    `,
+    register: `
       <div class="auth-form">
         <h2>Register</h2>
         <form id="register-form">
@@ -224,24 +254,33 @@ window.API_BASE_URL = window.API_BASE_URL || 'https://backend-cpn2.onrender.com'
         </form>
         <p>Already have an account? <a href="#" onclick="loadLogin()">Login</a></p>
       </div>
-    `;
+    `
+  };
 
-    const form = document.getElementById('register-form');
-    if (form) {
-      form.addEventListener('submit', handleRegister);
-    }
+  function loadLogin() {
+    if (!elements.mainContent) return;
+    elements.mainContent.innerHTML = templates.login;
+    document.getElementById('login-form')?.addEventListener('submit', handleLogin);
   }
 
-  // Initialize on DOM load
+  function loadRegister() {
+    if (!elements.mainContent) return;
+    elements.mainContent.innerHTML = templates.register;
+    document.getElementById('register-form')?.addEventListener('submit', handleRegister);
+  }
+
+  // Initialize
   document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
     setupNavigation();
   });
 
-  // Expose only necessary functions to global scope
-  window.checkAuth = checkAuth;
-  window.setupNavigation = setupNavigation;
-  window.logout = logout;
-  window.loadLogin = loadLogin;
-  window.loadRegister = loadRegister;
+  // Public API
+  window.authModule = {
+    checkAuth,
+    logout,
+    loadLogin,
+    loadRegister,
+    get currentUser() { return state.user; }
+  };
 })();
