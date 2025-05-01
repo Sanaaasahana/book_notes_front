@@ -17,7 +17,7 @@ window.API_BASE_URL = window.API_BASE_URL || (() => {
         if (!userData || userData === 'undefined') return null;
         return JSON.parse(userData);
       } catch (e) {
-        console.error('Error parsing user data from localStorage:', e);
+        console.error('Error parsing user data from Storage:', e);
         localStorage.removeItem('user');
         return null;
       }
@@ -132,6 +132,7 @@ window.API_BASE_URL = window.API_BASE_URL || (() => {
       state.user = data.user;
       setupNavigation();
       showAuthenticatedViews();
+      updateNavLinks();
       loadDashboard();
       showAlert('Login successful!', 'success');
     } catch (error) {
