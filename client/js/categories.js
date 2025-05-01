@@ -7,15 +7,16 @@
 async function fetchCategories() {
   try {
     const response = await fetch(`${window.API_BASE_URL}/api/categories`, {
-      headers: { 
+      headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`,
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
+
     return await response.json();
   } catch (error) {
     console.error('Fetch categories error:', error);
@@ -27,10 +28,17 @@ async function fetchCategories() {
 /**
  * Adds a new category
  */
-async function addCategory() {
+async function addCategory(e) {
+  if (e) e.preventDefault(); // Prevent form submission if tied to form
+
   const nameInput = document.getElementById('new-category');
+  if (!nameInput) {
+    showToast('Category input not found', 'error');
+    return;
+  }
+
   const name = nameInput.value.trim();
-  
+
   if (!name) {
     showToast('Category name cannot be empty', 'warning');
     return;
@@ -50,7 +58,7 @@ async function addCategory() {
       nameInput.value = '';
       showToast('Category added successfully', 'success');
       await loadCategories();
-      await loadBooks(); // Refresh books to show new category
+      if (typeof loadBooks === 'function') await loadBooks(); // optional
     } else {
       const error = await response.json();
       throw new Error(error.message || 'Failed to add category');
@@ -69,7 +77,7 @@ async function addCategory() {
 async function deleteCategory(e, categoryId) {
   e.preventDefault();
   e.stopPropagation();
-  
+
   if (!confirm('Are you sure you want to delete this category?\nAll associated books will be uncategorized.')) {
     return;
   }
@@ -77,7 +85,7 @@ async function deleteCategory(e, categoryId) {
   try {
     const response = await fetch(`${window.API_BASE_URL}/api/categories/${categoryId}`, {
       method: 'DELETE',
-      headers: { 
+      headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`,
         'Content-Type': 'application/json'
       }
@@ -86,7 +94,7 @@ async function deleteCategory(e, categoryId) {
     if (response.ok) {
       showToast('Category deleted successfully', 'success');
       await loadCategories();
-      await loadBooks(); // Refresh books list
+      if (typeof loadBooks === 'function') await loadBooks(); // optional
     } else {
       const error = await response.json();
       throw new Error(error.message || 'Failed to delete category');
@@ -101,17 +109,17 @@ async function deleteCategory(e, categoryId) {
  * Loads and displays all categories
  */
 async function loadCategories() {
-  try {
-    const categoriesList = document.getElementById('categories-list');
-    if (!categoriesList) {
-      console.error('Categories list element not found');
-      return;
-    }
+  const categoriesList = document.getElementById('categories-list');
+  if (!categoriesList) {
+    console.error('Categories list element not found');
+    return;
+  }
 
-    categoriesList.innerHTML = '<li class="loading">Loading categories...</li>';
-    
+  categoriesList.innerHTML = '<li class="loading">Loading categories...</li>';
+
+  try {
     const categories = await fetchCategories();
-    
+
     if (categories.length === 0) {
       categoriesList.innerHTML = '<li>No categories yet</li>';
       return;
@@ -120,20 +128,17 @@ async function loadCategories() {
     categoriesList.innerHTML = categories.map(category => `
       <li class="category-item" data-id="${category.id}">
         <a href="#" onclick="loadBooksByCategory(${category.id})" class="category-link">
-          ${category.name} 
+          ${category.name}
           <span class="book-count">(${category.book_count || 0})</span>
         </a>
-        <button class="btn-danger" onclick="deleteCategory(event, ${category.id})">
+        <button type="button" class="btn-danger" onclick="deleteCategory(event, ${category.id})">
           <i class="fas fa-trash"></i>
         </button>
       </li>
     `).join('');
   } catch (error) {
     console.error('Load categories error:', error);
-    const categoriesList = document.getElementById('categories-list');
-    if (categoriesList) {
-      categoriesList.innerHTML = '<li class="error">Failed to load categories</li>';
-    }
+    categoriesList.innerHTML = '<li class="error">Failed to load categories</li>';
   }
 }
 
@@ -147,7 +152,7 @@ function showToast(message, type = 'info') {
   toast.className = `toast ${type}`;
   toast.textContent = message;
   document.body.appendChild(toast);
-  
+
   setTimeout(() => {
     toast.classList.add('show');
     setTimeout(() => {
@@ -156,15 +161,25 @@ function showToast(message, type = 'info') {
   }, 100);
 }
 
-// Make functions available globally
-window.fetchCategories = fetchCategories;
-window.addCategory = addCategory;
-window.deleteCategory = deleteCategory;
-window.loadCategories = loadCategories;
-
-// Initialize categories when DOM is ready
+// Attach addCategory to button or form
 document.addEventListener('DOMContentLoaded', () => {
   if (document.getElementById('categories-list')) {
     loadCategories();
   }
+
+  const addBtn = document.getElementById('add-category-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', addCategory);
+  }
+
+  const addForm = document.getElementById('add-category-form');
+  if (addForm) {
+    addForm.addEventListener('submit', addCategory);
+  }
 });
+
+// Expose globally if needed
+window.fetchCategories = fetchCategories;
+window.addCategory = addCategory;
+window.deleteCategory = deleteCategory;
+window.loadCategories = loadCategories;
