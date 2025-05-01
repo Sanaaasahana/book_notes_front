@@ -537,13 +537,26 @@ async function fetchNotes(bookId) {
 }
 
 // UI update functions
-// In your app.js frontend code
 function loadCategories() {
-  const container = document.getElementById('categories-container');
+  let container = document.getElementById('categories-container');
+  
   if (!container) {
-    console.error('Categories container not found');
-    return;
+    container = document.createElement('div');
+    container.id = 'categories-container';
+    document.body.appendChild(container);
   }
+
+  apiClient.request('/api/categories')
+    .then(categories => {
+      container.innerHTML = categories.map(cat => `
+        <div class="category">${cat.name}</div>
+      `).join('');
+    })
+    .catch(error => {
+      console.error('Failed to load categories:', error);
+      container.innerHTML = '<p>Failed to load categories</p>';
+    });
+}
 
   apiClient.request('/api/categories')
     .then(categories => {
