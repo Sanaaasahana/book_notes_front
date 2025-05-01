@@ -1,6 +1,5 @@
 // Configuration - API Base URL with environment awareness
 window.API_BASE_URL = window.API_BASE_URL || (function() {
-  // Auto-detect environment
   const isLocal = window.location.hostname === 'localhost' || 
                  window.location.hostname === '127.0.0.1';
   return isLocal ? 'http://localhost:5000' : 'https://backend-cpn2.onrender.com';
@@ -8,75 +7,46 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
 
 // Core Application
 (function() {
-  // State Management with persistence
+  // Enhanced State Management
   const state = {
-    currentUser: null,
+    _currentUser: null,
     get user() {
+      if (this._currentUser) return this._currentUser;
       const userData = localStorage.getItem('user');
-      return this.currentUser || (userData ? JSON.parse(userData) : null);
+      return userData ? JSON.parse(userData) : null;
     },
     set user(userData) {
-      this.currentUser = userData;
+      this._currentUser = userData;
       if (userData) {
         localStorage.setItem('user', JSON.stringify(userData));
       } else {
         localStorage.removeItem('user');
       }
+    },
+    clear() {
+      this._currentUser = null;
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
     }
   };
 
   // DOM Elements cache
   const elements = {
     nav: document.getElementById('nav'),
-    mainContent: document.getElementById('main-content')
+    mainContent: document.getElementById('main-content'),
+    alertContainer: document.getElementById('alert-container') || document.body
   };
 
-  // Authentication Functions
-  function checkAuth() {
-    const token = localStorage.getItem('token');
-    try {
-      if (token && state.user) {
-        showAuthenticatedViews();
-        loadDashboard();
-        return;
-      }
-    } catch (error) {
-      console.error('Auth state error:', error);
-      clearAuthState();
-    }
-    showUnauthenticatedViews();
-    loadLogin();
-  }
-
-  function clearAuthState() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    state.user = null;
-  }
-
-  // View Management
-  function showAuthenticatedViews() {
-    document.querySelectorAll('.auth-only').forEach(el => {
-      if (el) el.style.display = 'block';
-    });
-    document.querySelectorAll('.guest-only').forEach(el => {
-      if (el) el.style.display = 'none';
-    });
-  }
-
-  function showUnauthenticatedViews() {
-    document.querySelectorAll('.auth-only').forEach(el => {
-      if (el) el.style.display = 'none';
-    });
-    document.querySelectorAll('.guest-only').forEach(el => {
-      if (el) el.style.display = 'block';
-    });
-  }
-
-  // Enhanced API Client with CORS handling
+  // Enhanced API Client
   const apiClient = {
     async request(endpoint, { method = 'GET', body, headers = {} } = {}) {
       const url = `${window.API_BASE_URL}${endpoint}`;
+      const token = localStorage.getItem('token');
+      
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
       const config = {
         method,
         headers: {
@@ -92,9 +62,12 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
       try {
         const response = await fetch(url, config);
         
-        // Handle CORS preflight errors
-        if (response.status === 0) {
-          throw new Error('CORS policy blocked the request');
+        if (response.status === 401) {
+          // Token expired or invalid
+          state.clear();
+          showAlert('Session expired. Please login again.', 'error');
+          window.location.href = '/login';
+          throw new Error('Unauthorized');
         }
 
         if (!response.ok) {
@@ -110,7 +83,47 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
     }
   };
 
-  // Auth Handlers with better validation
+  // Authentication Functions
+  function checkAuth() {
+    const token = localStorage.getItem('token');
+    if (token && state.user) {
+      // Verify token isn't expired
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.exp * 1000 > Date.now()) {
+        showAuthenticatedViews();
+        loadDashboard();
+        return;
+      }
+    }
+    clearAuthState();
+    showUnauthenticatedViews();
+    loadLogin();
+  }
+
+  function clearAuthState() {
+    state.clear();
+  }
+
+  // View Management
+  function showAuthenticatedViews() {
+    document.querySelectorAll('.auth-only').forEach(el => {
+      el.style.display = 'block';
+    });
+    document.querySelectorAll('.guest-only').forEach(el => {
+      el.style.display = 'none';
+    });
+  }
+
+  function showUnauthenticatedViews() {
+    document.querySelectorAll('.auth-only').forEach(el => {
+      el.style.display = 'none';
+    });
+    document.querySelectorAll('.guest-only').forEach(el => {
+      el.style.display = 'block';
+    });
+  }
+
+  // Auth Handlers
   async function handleLogin(e) {
     e.preventDefault();
     const email = document.getElementById('login-email')?.value.trim();
@@ -121,23 +134,33 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
       return;
     }
 
+    showAlert('Logging in...', 'info');
+
     try {
       const data = await apiClient.request('/api/auth/login', {
         method: 'POST',
         body: { email, password }
       });
 
+      if (!data.token) {
+        throw new Error('No token received from server');
+      }
+
       localStorage.setItem('token', data.token);
       state.user = data.user;
-      setupNavigation();
-      showAuthenticatedViews();
-      loadDashboard();
-      showAlert('Login successful!', 'success');
+      
+      showAlert('Login successful! Redirecting...', 'success');
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 1500);
     } catch (error) {
-      showAlert(error.message.includes('CORS') 
-        ? 'Connection error. Please try again later.' 
-        : 'Invalid credentials', 
-      'error');
+      console.error('Login error:', error);
+      showAlert(
+        error.message.includes('CORS') ? 'Connection error' :
+        error.message.includes('401') ? 'Invalid credentials' :
+        'Login failed. Please try again.',
+        'error'
+      );
     }
   }
 
@@ -157,6 +180,8 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
       return;
     }
 
+    showAlert('Creating account...', 'info');
+
     try {
       const data = await apiClient.request('/api/auth/register', {
         method: 'POST',
@@ -165,11 +190,13 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
 
       localStorage.setItem('token', data.token);
       state.user = data.user;
-      setupNavigation();
-      showAuthenticatedViews();
-      loadDashboard();
-      showAlert('Registration successful!', 'success');
+      
+      showAlert('Registration successful! Redirecting...', 'success');
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 1500);
     } catch (error) {
+      console.error('Registration error:', error);
       showAlert(
         error.message.includes('CORS') ? 'Connection error' :
         error.message.includes('409') ? 'User already exists' :
@@ -180,45 +207,50 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
   }
 
   async function logout() {
+    showAlert('Logging out...', 'info');
+    
     try {
       await apiClient.request('/api/auth/logout', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        method: 'POST'
       });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
       clearAuthState();
-      setupNavigation();
-      showUnauthenticatedViews();
-      loadLogin();
+      showAlert('Logged out successfully', 'success');
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 1000);
     }
   }
 
   // UI Helpers
   function showAlert(message, type = 'info') {
-    // Replace with your actual alert/notification system
     const alertDiv = document.createElement('div');
     alertDiv.className = `alert alert-${type}`;
     alertDiv.textContent = message;
-    document.body.appendChild(alertDiv);
-    setTimeout(() => alertDiv.remove(), 3000);
+    elements.alertContainer.appendChild(alertDiv);
+    setTimeout(() => alertDiv.remove(), 5000);
   }
 
   function setupNavigation() {
     if (!elements.nav) return;
     
     elements.nav.innerHTML = state.user ? `
-      <a href="#" onclick="authModule.loadDashboard()">Dashboard</a>
-      <a href="#" onclick="authModule.loadBookForm()">Add Book</a>
-      <a href="#" onclick="authModule.logout()">Logout</a>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/books">Books</a>
+      <a href="/profile">Profile</a>
+      <a href="#" id="logout-btn">Logout</a>
       <span>Welcome, ${state.user.username}</span>
     ` : `
-      <a href="#" onclick="authModule.loadLogin()">Login</a>
-      <a href="#" onclick="authModule.loadRegister()">Register</a>
+      <a href="/login">Login</a>
+      <a href="/register">Register</a>
     `;
+    
+    document.getElementById('logout-btn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      logout();
+    });
   }
 
   // UI Loaders
@@ -238,7 +270,7 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
           </div>
           <button type="submit">Login</button>
         </form>
-        <p>Don't have an account? <a href="#" onclick="authModule.loadRegister()">Register</a></p>
+        <p>Don't have an account? <a href="/register">Register</a></p>
       </div>
     `;
     document.getElementById('login-form')?.addEventListener('submit', handleLogin);
@@ -264,7 +296,7 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
           </div>
           <button type="submit">Register</button>
         </form>
-        <p>Already have an account? <a href="#" onclick="authModule.loadLogin()">Login</a></p>
+        <p>Already have an account? <a href="/login">Login</a></p>
       </div>
     `;
     document.getElementById('register-form')?.addEventListener('submit', handleRegister);
@@ -274,6 +306,11 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
   document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
     setupNavigation();
+    
+    // Handle back/forward navigation
+    window.addEventListener('popstate', () => {
+      checkAuth();
+    });
   });
 
   // Public API
@@ -282,13 +319,9 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
     logout,
     loadLogin,
     loadRegister,
-    loadDashboard: function() {
-      // Implement your dashboard loading logic
-      if (elements.mainContent) elements.mainContent.innerHTML = '<h2>Dashboard</h2>';
+    get currentUser() {
+      return state.user;
     },
-    loadBookForm: function() {
-      // Implement your book form loading logic
-      if (elements.mainContent) elements.mainContent.innerHTML = '<h2>Book Form</h2>';
-    }
+    apiClient
   };
 })();
