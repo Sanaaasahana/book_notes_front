@@ -46,52 +46,46 @@ window.API_BASE_URL = window.API_BASE_URL || (() => {
   document.body.appendChild(elements.alertContainer);
 
   // Enhanced API Client
-  const apiClient = {
-    async request(endpoint, { method = 'GET', body, headers = {} } = {}) {
-      const url = `${window.API_BASE_URL}${endpoint}`;
-      const token = localStorage.getItem('token');
+  // In your frontend JavaScript file (auth.js/app.js)
+const apiClient = {
+  async request(endpoint, { method = 'GET', body, headers = {} } = {}) {
+    const url = `${window.API_BASE_URL}${endpoint}`;
+    const token = localStorage.getItem('token');
+    
+    const config = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` }),
+        ...headers
+      },
+      credentials: 'include',
+      mode: 'cors'
+    };
+
+    if (body) config.body = JSON.stringify(body);
+
+    try {
+      const response = await fetch(url, config);
       
-      const config = {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-          ...headers
-        },
-        credentials: 'include',
-        mode: 'cors'
-      };
-
-      if (body) config.body = JSON.stringify(body);
-
-      try {
-        const response = await fetch(url, config);
-        
-        // Handle CORS and network errors
-        if (response.status === 0 || response.type === 'opaque') {
-          throw new Error('Network error or CORS blocked the request');
-        }
-
-        if (response.status === 401) {
-          // Token expired or invalid
-          state.clear();
-          showAlert('Session expired. Please login again.', 'error');
-          window.location.href = '/login';
-          throw new Error('Unauthorized');
-        }
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.message || `Request failed with status ${response.status}`);
-        }
-
-        return await response.json();
-      } catch (error) {
-        console.error(`API Error at ${endpoint}:`, error);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const error = new Error(errorData.message || `Request failed with status ${response.status}`);
+        error.status = response.status;
         throw error;
       }
+
+      return await response.json();
+    } catch (error) {
+      console.error(`API Error at ${endpoint}:`, error);
+      if (error.status === 401) {
+        // Handle unauthorized
+        window.location.href = '/login';
+      }
+      throw error;
     }
-  };
+  }
+};
 
   // Authentication Functions
   async function checkAuth() {
