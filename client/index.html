@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://backend-cpn2.onrender.com">
+  <meta http-equiv="Content-Security-Policy" content="
+  default-src 'self' https://backend-cpn2.onrender.com;
+  style-src 'self' https://fonts.googleapis.com https://cdnjs.cloudflare.com 'unsafe-inline';
+  font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com;
+  script-src 'self' 'unsafe-inline';
+  connect-src 'self' https://backend-cpn2.onrender.com;">
+
   <title>Book Notes</title>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
   <link href="css/styles.css" rel="stylesheet">
