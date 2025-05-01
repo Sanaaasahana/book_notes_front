@@ -1,21 +1,27 @@
+// Configuration - Remove API_BASE_URL if already defined in app.js
+// Use window.API_BASE_URL instead of redeclaring
 
-
-// DOM Ready
+// Core Application
 document.addEventListener('DOMContentLoaded', () => {
   checkAuth();
   setupNavigation();
 });
 
-// State
+// State Management
 let currentUser = null;
 
-// Auth Functions
+// Authentication Functions
 function checkAuth() {
   const token = localStorage.getItem('token');
   if (token) {
-    currentUser = JSON.parse(localStorage.getItem('user'));
-    showAuthenticatedViews();
-    loadDashboard();
+    try {
+      currentUser = JSON.parse(localStorage.getItem('user'));
+      showAuthenticatedViews();
+      loadDashboard();
+    } catch (error) {
+      console.error('Error parsing user data:', error);
+      logout();
+    }
   } else {
     showUnauthenticatedViews();
     loadLogin();
@@ -24,38 +30,54 @@ function checkAuth() {
 
 function setupNavigation() {
   const nav = document.getElementById('nav');
-  nav.innerHTML = `
-    ${currentUser ? `
-      <a href="#" onclick="loadDashboard()">Dashboard</a>
-      <a href="#" onclick="loadBookForm()">Add Book</a>
-      <a href="#" onclick="logout()">Logout</a>
-      <span>Welcome, ${currentUser.username}</span>
-    ` : `
-      <a href="#" onclick="loadLogin()">Login</a>
-      <a href="#" onclick="loadRegister()">Register</a>
-    `}
+  if (!nav) {
+    console.error('Navigation element not found');
+    return;
+  }
+
+  nav.innerHTML = currentUser ? `
+    <a href="#" onclick="loadDashboard()">Dashboard</a>
+    <a href="#" onclick="loadBookForm()">Add Book</a>
+    <a href="#" onclick="logout()">Logout</a>
+    <span>Welcome, ${currentUser.username}</span>
+  ` : `
+    <a href="#" onclick="loadLogin()">Login</a>
+    <a href="#" onclick="loadRegister()">Register</a>
   `;
 }
 
-// View Helpers
+// View Management
 function showAuthenticatedViews() {
-  document.querySelectorAll('.auth-only').forEach(el => el.style.display = 'block');
-  document.querySelectorAll('.guest-only').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.auth-only').forEach(el => {
+    if (el) el.style.display = 'block';
+  });
+  document.querySelectorAll('.guest-only').forEach(el => {
+    if (el) el.style.display = 'none';
+  });
 }
 
 function showUnauthenticatedViews() {
-  document.querySelectorAll('.auth-only').forEach(el => el.style.display = 'none');
-  document.querySelectorAll('.guest-only').forEach(el => el.style.display = 'block');
+  document.querySelectorAll('.auth-only').forEach(el => {
+    if (el) el.style.display = 'none';
+  });
+  document.querySelectorAll('.guest-only').forEach(el => {
+    if (el) el.style.display = 'block';
+  });
 }
 
 // Auth Handlers
 async function handleLogin(e) {
   e.preventDefault();
-  const email = document.getElementById('login-email').value;
-  const password = document.getElementById('login-password').value;
-  
+  const email = document.getElementById('login-email')?.value;
+  const password = document.getElementById('login-password')?.value;
+
+  if (!email || !password) {
+    alert('Please fill in all fields');
+    return;
+  }
+
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+    const response = await fetch(`${window.API_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
@@ -75,18 +97,23 @@ async function handleLogin(e) {
     }
   } catch (error) {
     console.error('Login error:', error);
-    alert('Login failed');
+    alert('Login failed. Please try again.');
   }
 }
 
 async function handleRegister(e) {
   e.preventDefault();
-  const username = document.getElementById('register-username').value;
-  const email = document.getElementById('register-email').value;
-  const password = document.getElementById('register-password').value;
-  
+  const username = document.getElementById('register-username')?.value;
+  const email = document.getElementById('register-email')?.value;
+  const password = document.getElementById('register-password')?.value;
+
+  if (!username || !email || !password) {
+    alert('Please fill in all fields');
+    return;
+  }
+
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+    const response = await fetch(`${window.API_BASE_URL}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, email, password })
@@ -106,15 +133,20 @@ async function handleRegister(e) {
     }
   } catch (error) {
     console.error('Registration error:', error);
-    alert('Registration failed');
+    alert('Registration failed. Please try again.');
   }
 }
 
 function logout() {
-  fetch(`${API_BASE_URL}/api/auth/logout`, {
+  fetch(`${window.API_BASE_URL}/api/auth/logout`, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-  }).finally(() => {
+    headers: { 
+      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      'Content-Type': 'application/json'
+    }
+  })
+  .catch(error => console.error('Logout error:', error))
+  .finally(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     currentUser = null;
@@ -124,146 +156,74 @@ function logout() {
   });
 }
 
-// Book Functions
-async function fetchBooks() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/books`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.ok ? await response.json() : [];
-  } catch (error) {
-    console.error('Fetch books error:', error);
-    return [];
-  }
-}
-
-async function handleAddBook(e) {
-  e.preventDefault();
-  const bookData = {
-    title: document.getElementById('book-title').value,
-    author: document.getElementById('book-author').value,
-    categoryId: document.getElementById('book-category').value,
-    status: document.getElementById('book-status').value,
-    rating: document.getElementById('book-rating').value
-  };
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/books`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify(bookData)
-    });
-
-    if (response.ok) {
-      loadDashboard();
-    } else {
-      const error = await response.json();
-      alert(error.message || 'Failed to add book');
-    }
-  } catch (error) {
-    console.error('Add book error:', error);
-    alert('Failed to add book');
-  }
-}
-
-// Note Functions
-async function fetchNotes(bookId) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/notes/book/${bookId}`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.ok ? await response.json() : [];
-  } catch (error) {
-    console.error('Fetch notes error:', error);
-    return [];
-  }
-}
-
-async function handleAddNote(e) {
-  e.preventDefault();
-  const noteData = {
-    bookId: document.getElementById('note-book-id').value,
-    content: document.getElementById('note-content').value
-  };
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/notes`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify(noteData)
-    });
-
-    if (response.ok) {
-      loadBookNotes(noteData.bookId);
-    } else {
-      const error = await response.json();
-      alert(error.message || 'Failed to add note');
-    }
-  } catch (error) {
-    console.error('Add note error:', error);
-    alert('Failed to add note');
-  }
-}
-
-// Category Functions
-async function fetchCategories() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/categories`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.ok ? await response.json() : [];
-  } catch (error) {
-    console.error('Fetch categories error:', error);
-    return [];
-  }
-}
-
 // UI Loaders
-function loadDashboard() {
-  document.getElementById('main-content').innerHTML = `
-    <div class="dashboard">
-      <div class="categories-sidebar">
-        <h2>Categories</h2>
-        <ul id="categories-list"></ul>
-        <div class="category-form">
-          <input type="text" id="new-category" placeholder="New category">
-          <button onclick="addCategory()">Add</button>
-        </div>
-      </div>
-      <div class="books-container">
-        <div class="books-header">
-          <h2>All Books</h2>
-          <button onclick="loadBookForm()">Add Book</button>
-        </div>
-        <div class="books-grid" id="books-grid"></div>
-      </div>
-    </div>
-  `;
-  loadCategories();
-  loadBooks();
-}
+function loadLogin() {
+  const mainContent = document.getElementById('main-content');
+  if (!mainContent) return;
 
-function loadBookForm(book = null) {
-  const isEdit = !!book;
-  document.getElementById('main-content').innerHTML = `
-    <div class="book-form">
-      <h2>${isEdit ? 'Edit Book' : 'Add Book'}</h2>
-      <form id="book-form">
-        <input type="hidden" id="book-id" value="${book?.id || ''}">
-        <!-- Form fields here -->
-        <button type="submit">${isEdit ? 'Update' : 'Add'}</button>
+  mainContent.innerHTML = `
+    <div class="auth-form">
+      <h2>Login</h2>
+      <form id="login-form">
+        <div class="form-group">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" required>
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" required>
+        </div>
+        <button type="submit">Login</button>
       </form>
+      <p>Don't have an account? <a href="#" onclick="loadRegister()">Register</a></p>
     </div>
   `;
-  document.getElementById('book-form')
-    .addEventListener('submit', isEdit ? handleUpdateBook : handleAddBook);
+
+  const form = document.getElementById('login-form');
+  if (form) {
+    form.addEventListener('submit', handleLogin);
+  }
 }
 
-// Initialize
-checkAuth();
+function loadRegister() {
+  const mainContent = document.getElementById('main-content');
+  if (!mainContent) return;
+
+  mainContent.innerHTML = `
+    <div class="auth-form">
+      <h2>Register</h2>
+      <form id="register-form">
+        <div class="form-group">
+          <label for="register-username">Username</label>
+          <input type="text" id="register-username" required>
+        </div>
+        <div class="form-group">
+          <label for="register-email">Email</label>
+          <input type="email" id="register-email" required>
+        </div>
+        <div class="form-group">
+          <label for="register-password">Password</label>
+          <input type="password" id="register-password" required minlength="6">
+        </div>
+        <button type="submit">Register</button>
+      </form>
+      <p>Already have an account? <a href="#" onclick="loadLogin()">Login</a></p>
+    </div>
+  `;
+
+  const form = document.getElementById('register-form');
+  if (form) {
+    form.addEventListener('submit', handleRegister);
+  }
+}
+
+// Make functions available globally
+window.checkAuth = checkAuth;
+window.setupNavigation = setupNavigation;
+window.showAuthenticatedViews = showAuthenticatedViews;
+window.showUnauthenticatedViews = showUnauthenticatedViews;
+window.handleLogin = handleLogin;
+window.handleRegister = handleRegister;
+window.logout = logout;
+window.loadLogin = loadLogin;
+window.loadRegister = loadRegister;
