@@ -8,8 +8,4 @@
   to = "/index.html"
   status = 200
 
-# Optional: Development settings
-[dev]
-  framework = "#static"
-  command = "echo 'No dev server needed for static site'"
-  targetPort = 3000    # Only used if you add a live-server later
+
