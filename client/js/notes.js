@@ -1,627 +1,344 @@
-// Configuration
-const API_BASE_URL = 'https://backend-cpn2.onrender.com';
+// Notes Functions - Using window.API_BASE_URL from app.js
 
-// Core Application
-document.addEventListener('DOMContentLoaded', () => {
-  checkAuth();
-  setupNavigation();
-});
-
-// State Management
-let currentUser = null;
-
-// Authentication Functions
-function checkAuth() {
-  const token = localStorage.getItem('token');
-  if (token) {
-    currentUser = JSON.parse(localStorage.getItem('user'));
-    showAuthenticatedViews();
-    loadDashboard();
-  } else {
-    showUnauthenticatedViews();
-    loadLogin();
-  }
-}
-
-function setupNavigation() {
-  const nav = document.getElementById('nav');
-  nav.innerHTML = `
-    ${currentUser ? `
-      <a href="#" onclick="loadDashboard()">Dashboard</a>
-      <a href="#" onclick="loadBookForm()">Add Book</a>
-      <a href="#" onclick="logout()">Logout</a>
-      <span>Welcome, ${currentUser.username}</span>
-    ` : `
-      <a href="#" onclick="loadLogin()">Login</a>
-      <a href="#" onclick="loadRegister()">Register</a>
-    `}
-  `;
-}
-
-// View Management
-function showAuthenticatedViews() {
-  document.querySelectorAll('.auth-only').forEach(el => el.style.display = 'block');
-  document.querySelectorAll('.guest-only').forEach(el => el.style.display = 'none');
-}
-
-function showUnauthenticatedViews() {
-  document.querySelectorAll('.auth-only').forEach(el => el.style.display = 'none');
-  document.querySelectorAll('.guest-only').forEach(el => el.style.display = 'block');
-}
-
-// Auth Handlers
-async function handleLogin(e) {
-  e.preventDefault();
-  const email = document.getElementById('login-email').value;
-  const password = document.getElementById('login-password').value;
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    
-    const data = await response.json();
-    
-    if (response.ok) {
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      currentUser = data.user;
-      setupNavigation();
-      showAuthenticatedViews();
-      loadDashboard();
-    } else {
-      alert(data.error || 'Login failed');
-    }
-  } catch (error) {
-    console.error('Login error:', error);
-    alert('Login failed');
-  }
-}
-
-async function handleRegister(e) {
-  e.preventDefault();
-  const username = document.getElementById('register-username').value;
-  const email = document.getElementById('register-email').value;
-  const password = document.getElementById('register-password').value;
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, email, password })
-    });
-    
-    const data = await response.json();
-    
-    if (response.ok) {
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      currentUser = data.user;
-      setupNavigation();
-      showAuthenticatedViews();
-      loadDashboard();
-    } else {
-      alert(data.error || 'Registration failed');
-    }
-  } catch (error) {
-    console.error('Registration error:', error);
-    alert('Registration failed');
-  }
-}
-
-function logout() {
-  fetch(`${API_BASE_URL}/api/auth/logout`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-  }).finally(() => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    currentUser = null;
-    setupNavigation();
-    showUnauthenticatedViews();
-    loadLogin();
-  });
-}
-
-// Book Functions
-async function fetchBooks() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/books`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.ok ? await response.json() : [];
-  } catch (error) {
-    console.error('Fetch books error:', error);
-    return [];
-  }
-}
-
-async function fetchBooksByCategory(categoryId) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/books/category/${categoryId}`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.ok ? await response.json() : [];
-  } catch (error) {
-    console.error('Fetch books by category error:', error);
-    return [];
-  }
-}
-
-async function loadBooks() {
-  const books = await fetchBooks();
-  updateBooksGrid(books);
-}
-
-function updateBooksGrid(books) {
-  const booksGrid = document.getElementById('books-grid');
-  
-  if (books.length === 0) {
-    booksGrid.innerHTML = '<p>No books yet. Add your first book!</p>';
-  } else {
-    booksGrid.innerHTML = books.map(book => `
-      <div class="book-card">
-        <h3>${book.title}</h3>
-        <p>by ${book.author}</p>
-        ${book.category_name ? `<p>Category: ${book.category_name}</p>` : ''}
-        <span class="book-status status-${book.status.replace(' ', '-')}">${book.status}</span>
-        ${book.rating ? `<p>Rating: ${'★'.repeat(book.rating)}${'☆'.repeat(5 - book.rating)}</p>` : ''}
-        <div class="book-actions">
-          <button onclick="loadBookForm(${JSON.stringify(book).replace(/"/g, '&quot;')})">Edit</button>
-          <button onclick="loadBookNotes(${book.id})">Notes</button>
-          <button class="btn-danger" onclick="deleteBook(${book.id})">Delete</button>
-        </div>
-      </div>
-    `).join('');
-  }
-}
-
-async function handleAddBook(e) {
-  e.preventDefault();
-  const bookData = {
-    title: document.getElementById('book-title').value,
-    author: document.getElementById('book-author').value,
-    categoryId: document.getElementById('book-category').value,
-    status: document.getElementById('book-status').value,
-    rating: document.getElementById('book-rating').value
-  };
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/books`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify(bookData)
-    });
-
-    if (response.ok) {
-      loadDashboard();
-    } else {
-      const error = await response.json();
-      alert(error.message || 'Failed to add book');
-    }
-  } catch (error) {
-    console.error('Add book error:', error);
-    alert('Failed to add book');
-  }
-}
-
-async function handleUpdateBook(e) {
-  e.preventDefault();
-  const bookId = document.getElementById('book-id').value;
-  const bookData = {
-    title: document.getElementById('book-title').value,
-    author: document.getElementById('book-author').value,
-    categoryId: document.getElementById('book-category').value,
-    status: document.getElementById('book-status').value,
-    rating: document.getElementById('book-rating').value
-  };
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/books/${bookId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify(bookData)
-    });
-
-    if (response.ok) {
-      loadDashboard();
-    } else {
-      const error = await response.json();
-      alert(error.message || 'Failed to update book');
-    }
-  } catch (error) {
-    console.error('Update book error:', error);
-    alert('Failed to update book');
-  }
-}
-
-async function deleteBook(bookId) {
-  if (!confirm('Are you sure you want to delete this book?')) return;
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/books/${bookId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-
-    if (response.ok) {
-      loadDashboard();
-    } else {
-      const error = await response.json();
-      alert(error.message || 'Failed to delete book');
-    }
-  } catch (error) {
-    console.error('Delete book error:', error);
-    alert('Failed to delete book');
-  }
-}
-
-// Note Functions
+/**
+ * Fetches notes for a specific book
+ * @param {number} bookId - ID of the book
+ * @returns {Promise<Array>} Array of note objects
+ */
 async function fetchNotes(bookId) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/notes/book/${bookId}`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    const response = await fetch(`${window.API_BASE_URL}/api/notes/book/${bookId}`, {
+      headers: { 
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
     });
-    return response.ok ? await response.json() : [];
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
   } catch (error) {
     console.error('Fetch notes error:', error);
+    showToast('Failed to load notes', 'error');
     return [];
   }
 }
 
+/**
+ * Adds a new note
+ * @param {Event} e - Form submit event
+ */
 async function handleAddNote(e) {
   e.preventDefault();
-  const noteData = {
-    bookId: document.getElementById('note-book-id').value,
-    content: document.getElementById('note-content').value
-  };
+  
+  const bookId = document.getElementById('note-book-id')?.value;
+  const content = document.getElementById('note-content')?.value.trim();
+  
+  if (!content) {
+    showToast('Note content cannot be empty', 'warning');
+    return;
+  }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/notes`, {
+    const response = await fetch(`${window.API_BASE_URL}/api/notes`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       },
-      body: JSON.stringify(noteData)
+      body: JSON.stringify({ 
+        bookId,
+        content 
+      })
     });
 
     if (response.ok) {
-      loadBookNotes(noteData.bookId);
+      showToast('Note added successfully', 'success');
+      loadBookNotes(bookId);
     } else {
       const error = await response.json();
-      alert(error.message || 'Failed to add note');
+      throw new Error(error.message || 'Failed to add note');
     }
   } catch (error) {
     console.error('Add note error:', error);
-    alert('Failed to add note');
+    showToast(error.message || 'Failed to add note', 'error');
   }
 }
 
+/**
+ * Updates an existing note
+ * @param {Event} e - Form submit event
+ */
 async function handleUpdateNote(e) {
   e.preventDefault();
-  const noteId = document.getElementById('note-id').value;
-  const noteData = {
-    content: document.getElementById('note-content').value
-  };
+  
+  const noteId = document.getElementById('note-id')?.value;
+  const bookId = document.getElementById('note-book-id')?.value;
+  const content = document.getElementById('note-content')?.value.trim();
+  
+  if (!content) {
+    showToast('Note content cannot be empty', 'warning');
+    return;
+  }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/notes/${noteId}`, {
+    const response = await fetch(`${window.API_BASE_URL}/api/notes/${noteId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       },
-      body: JSON.stringify(noteData)
+      body: JSON.stringify({ content })
     });
 
     if (response.ok) {
-      const bookId = document.getElementById('note-book-id').value;
+      showToast('Note updated successfully', 'success');
       loadBookNotes(bookId);
     } else {
       const error = await response.json();
-      alert(error.message || 'Failed to update note');
+      throw new Error(error.message || 'Failed to update note');
     }
   } catch (error) {
     console.error('Update note error:', error);
-    alert('Failed to update note');
+    showToast(error.message || 'Failed to update note', 'error');
   }
 }
 
+/**
+ * Deletes a note
+ * @param {number} noteId - ID of the note to delete
+ */
 async function deleteNote(noteId) {
-  if (!confirm('Are you sure you want to delete this note?')) return;
-  
+  if (!confirm('Are you sure you want to delete this note?\nThis action cannot be undone.')) {
+    return;
+  }
+
   try {
-    const response = await fetch(`${API_BASE_URL}/api/notes/${noteId}`, {
+    const bookId = document.getElementById('note-book-id')?.value;
+    const response = await fetch(`${window.API_BASE_URL}/api/notes/${noteId}`, {
       method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      headers: { 
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
     });
 
     if (response.ok) {
-      const bookId = document.getElementById('note-book-id').value;
+      showToast('Note deleted successfully', 'success');
       loadBookNotes(bookId);
     } else {
       const error = await response.json();
-      alert(error.message || 'Failed to delete note');
+      throw new Error(error.message || 'Failed to delete note');
     }
   } catch (error) {
     console.error('Delete note error:', error);
-    alert('Failed to delete note');
+    showToast(error.message || 'Failed to delete note', 'error');
   }
 }
 
-// Category Functions
-async function fetchCategories() {
+/**
+ * Loads and displays notes for a book
+ * @param {number} bookId - ID of the book
+ */
+async function loadBookNotes(bookId) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/categories`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    return response.ok ? await response.json() : [];
-  } catch (error) {
-    console.error('Fetch categories error:', error);
-    return [];
-  }
-}
-
-async function addCategory() {
-  const name = document.getElementById('new-category').value.trim();
-  if (!name) return;
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/categories`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify({ name })
-    });
-
-    if (response.ok) {
-      document.getElementById('new-category').value = '';
-      loadCategories();
-    } else {
-      const error = await response.json();
-      alert(error.message || 'Failed to add category');
+    const notesContainer = document.getElementById('main-content');
+    if (!notesContainer) {
+      console.error('Main content element not found');
+      return;
     }
-  } catch (error) {
-    console.error('Add category error:', error);
-    alert('Failed to add category');
-  }
-}
 
-async function deleteCategory(e, categoryId) {
-  e.preventDefault();
-  e.stopPropagation();
-  if (!confirm('Are you sure you want to delete this category?')) return;
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/categories/${categoryId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-
-    if (response.ok) {
-      loadCategories();
-      loadBooks();
-    } else {
-      const error = await response.json();
-      alert(error.message || 'Failed to delete category');
-    }
-  } catch (error) {
-    console.error('Delete category error:', error);
-    alert('Failed to delete category');
-  }
-}
-
-// UI Loaders
-function loadLogin() {
-  document.getElementById('main-content').innerHTML = `
-    <div class="auth-form">
-      <h2>Login</h2>
-      <form id="login-form">
-        <div class="form-group">
-          <label for="login-email">Email</label>
-          <input type="email" id="login-email" required>
+    notesContainer.innerHTML = `
+      <div class="notes-container">
+        <div class="notes-header">
+          <h2>Book Notes</h2>
+          <button onclick="loadNoteForm(${bookId})" class="btn-primary">
+            <i class="fas fa-plus"></i> Add Note
+          </button>
         </div>
-        <div class="form-group">
-          <label for="login-password">Password</label>
-          <input type="password" id="login-password" required>
-        </div>
-        <button type="submit">Login</button>
-      </form>
-      <p>Don't have an account? <a href="#" onclick="loadRegister()">Register</a></p>
-    </div>
-  `;
-  document.getElementById('login-form').addEventListener('submit', handleLogin);
-}
-
-function loadRegister() {
-  document.getElementById('main-content').innerHTML = `
-    <div class="auth-form">
-      <h2>Register</h2>
-      <form id="register-form">
-        <div class="form-group">
-          <label for="register-username">Username</label>
-          <input type="text" id="register-username" required>
-        </div>
-        <div class="form-group">
-          <label for="register-email">Email</label>
-          <input type="email" id="register-email" required>
-        </div>
-        <div class="form-group">
-          <label for="register-password">Password</label>
-          <input type="password" id="register-password" required minlength="6">
-        </div>
-        <button type="submit">Register</button>
-      </form>
-      <p>Already have an account? <a href="#" onclick="loadLogin()">Login</a></p>
-    </div>
-  `;
-  document.getElementById('register-form').addEventListener('submit', handleRegister);
-}
-
-function loadDashboard() {
-  document.getElementById('main-content').innerHTML = `
-    <div class="dashboard">
-      <div class="categories-sidebar">
-        <h2>Categories</h2>
-        <ul id="categories-list"></ul>
-        <div class="category-form">
-          <input type="text" id="new-category" placeholder="New category">
-          <button onclick="addCategory()">Add</button>
-        </div>
+        <div id="notes-list" class="notes-loading">Loading notes...</div>
       </div>
-      <div class="books-container">
-        <div class="books-header">
-          <h2>All Books</h2>
-          <button onclick="loadBookForm()">Add Book</button>
-        </div>
-        <div class="books-grid" id="books-grid"></div>
-      </div>
-    </div>
-  `;
-  loadCategories();
-  loadBooks();
-}
+    `;
 
-function loadBookForm(book = null) {
-  const isEdit = !!book;
-  document.getElementById('main-content').innerHTML = `
-    <div class="book-form">
-      <h2>${isEdit ? 'Edit Book' : 'Add Book'}</h2>
-      <form id="book-form">
-        <input type="hidden" id="book-id" value="${book?.id || ''}">
-        <div class="form-row">
-          <div class="form-group">
-            <label for="book-title">Title</label>
-            <input type="text" id="book-title" value="${book?.title || ''}" required>
-          </div>
-          <div class="form-group">
-            <label for="book-author">Author</label>
-            <input type="text" id="book-author" value="${book?.author || ''}" required>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="book-category">Category</label>
-            <select id="book-category" required>
-              <option value="">Select a category</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="book-status">Status</label>
-            <select id="book-status" required>
-              <option value="to-read" ${book?.status === 'to-read' ? 'selected' : ''}>To Read</option>
-              <option value="reading" ${book?.status === 'reading' ? 'selected' : ''}>Reading</option>
-              <option value="read" ${book?.status === 'read' ? 'selected' : ''}>Read</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="book-rating">Rating (1-5)</label>
-          <input type="number" id="book-rating" min="1" max="5" value="${book?.rating || ''}">
-        </div>
-        <button type="submit">${isEdit ? 'Update' : 'Add'}</button>
-        ${isEdit ? `<button type="button" class="btn-danger" onclick="deleteBook(${book.id})">Delete</button>` : ''}
-      </form>
-    </div>
-  `;
-
-  fetchCategories().then(categories => {
-    const select = document.getElementById('book-category');
-    select.innerHTML = '<option value="">Select a category</option>';
-    categories.forEach(category => {
-      const option = document.createElement('option');
-      option.value = category.id;
-      option.textContent = category.name;
-      if (book?.category_id === category.id) {
-        option.selected = true;
-      }
-      select.appendChild(option);
-    });
-  });
-
-  document.getElementById('book-form')
-    .addEventListener('submit', isEdit ? handleUpdateBook : handleAddBook);
-}
-
-function loadBookNotes(bookId) {
-  document.getElementById('main-content').innerHTML = `
-    <div class="notes-container">
-      <div class="notes-header">
-        <h2>Book Notes</h2>
-        <button onclick="loadNoteForm(${bookId})">Add Note</button>
-      </div>
-      <div id="notes-list"></div>
-    </div>
-  `;
-  fetchNotes(bookId).then(notes => {
+    const notes = await fetchNotes(bookId);
     const notesList = document.getElementById('notes-list');
-    notesList.innerHTML = notes.length ? notes.map(note => `
-      <div class="note-card">
-        <div class="note-content">${note.content}</div>
+    
+    if (notes.length === 0) {
+      notesList.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-book-open"></i>
+          <p>No notes yet</p>
+          <button onclick="loadNoteForm(${bookId})" class="btn-primary">
+            Add Your First Note
+          </button>
+        </div>
+      `;
+      return;
+    }
+
+    notesList.className = 'notes-list';
+    notesList.innerHTML = notes.map(note => `
+      <div class="note-card" data-id="${note.id}">
+        <div class="note-content">${formatNoteContent(note.content)}</div>
         <div class="note-meta">
-          <span>${new Date(note.created_at).toLocaleString()}</span>
+          <span class="note-date">
+            <i class="fas fa-clock"></i>
+            ${formatDate(note.created_at)}
+          </span>
           <div class="note-actions">
-            <button onclick="loadEditNoteForm(${note.id}, ${bookId})">Edit</button>
-            <button class="btn-danger" onclick="deleteNote(${note.id})">Delete</button>
+            <button onclick="loadEditNoteForm(${note.id}, ${bookId})" class="btn-edit">
+              <i class="fas fa-edit"></i> Edit
+            </button>
+            <button onclick="deleteNote(${note.id})" class="btn-danger">
+              <i class="fas fa-trash"></i> Delete
+            </button>
           </div>
         </div>
       </div>
-    `).join('') : '<p>No notes yet. Add your first note!</p>';
-  });
+    `).join('');
+  } catch (error) {
+    console.error('Load book notes error:', error);
+    const notesList = document.getElementById('notes-list');
+    if (notesList) {
+      notesList.innerHTML = `
+        <div class="error-state">
+          <i class="fas fa-exclamation-triangle"></i>
+          <p>Failed to load notes</p>
+          <button onclick="loadBookNotes(${bookId})" class="btn-retry">
+            <i class="fas fa-sync-alt"></i> Try Again
+          </button>
+        </div>
+      `;
+    }
+  }
 }
 
+/**
+ * Loads the note form for adding/editing
+ * @param {number} bookId - ID of the book
+ * @param {Object|null} note - Note object for editing, or null for new note
+ */
 function loadNoteForm(bookId, note = null) {
   const isEdit = !!note;
-  document.getElementById('main-content').innerHTML = `
-    <div class="book-form">
+  const mainContent = document.getElementById('main-content');
+  if (!mainContent) return;
+
+  mainContent.innerHTML = `
+    <div class="note-form-container">
       <h2>${isEdit ? 'Edit Note' : 'Add Note'}</h2>
-      <form id="note-form">
+      <form id="note-form" class="note-form">
         <input type="hidden" id="note-id" value="${note?.id || ''}">
         <input type="hidden" id="note-book-id" value="${bookId}">
+        
         <div class="form-group">
           <label for="note-content">Note Content</label>
-          <textarea id="note-content" rows="6" required>${note?.content || ''}</textarea>
+          <textarea 
+            id="note-content" 
+            rows="8" 
+            placeholder="Write your thoughts about this book..." 
+            required
+          >${note?.content || ''}</textarea>
         </div>
-        <button type="submit">${isEdit ? 'Update' : 'Add'}</button>
-        ${isEdit ? `<button type="button" class="btn-danger" onclick="deleteNote(${note.id})">Delete</button>` : ''}
+        
+        <div class="form-actions">
+          <button type="button" onclick="loadBookNotes(${bookId})" class="btn-cancel">
+            <i class="fas fa-arrow-left"></i> Cancel
+          </button>
+          <button type="submit" class="btn-primary">
+            ${isEdit ? '<i class="fas fa-save"></i> Update' : '<i class="fas fa-plus"></i> Add'}
+          </button>
+        </div>
       </form>
     </div>
   `;
-  document.getElementById('note-form')
-    .addEventListener('submit', isEdit ? handleUpdateNote : handleAddNote);
+
+  const form = document.getElementById('note-form');
+  if (form) {
+    form.addEventListener('submit', isEdit ? handleUpdateNote : handleAddNote);
+    // Auto-focus the textarea
+    const textarea = document.getElementById('note-content');
+    if (textarea) textarea.focus();
+  }
 }
 
-function loadEditNoteForm(noteId, bookId) {
-  fetch(`${API_BASE_URL}/api/notes/${noteId}`, {
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-  })
-    .then(response => response.json())
-    .then(note => loadNoteForm(bookId, note))
-    .catch(error => {
-      console.error('Error fetching note:', error);
-      alert('Failed to fetch note');
+/**
+ * Loads the edit form for a specific note
+ * @param {number} noteId - ID of the note to edit
+ * @param {number} bookId - ID of the associated book
+ */
+async function loadEditNoteForm(noteId, bookId) {
+  try {
+    const response = await fetch(`${window.API_BASE_URL}/api/notes/${noteId}`, {
+      headers: { 
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
     });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const note = await response.json();
+    loadNoteForm(bookId, note);
+  } catch (error) {
+    console.error('Error fetching note:', error);
+    showToast('Failed to load note for editing', 'error');
+  }
 }
 
-function loadCategories() {
-  fetchCategories().then(categories => {
-    const categoriesList = document.getElementById('categories-list');
-    categoriesList.innerHTML = categories.length ? categories.map(category => `
-      <li>
-        <a href="#" onclick="loadBooksByCategory(${category.id})">${category.name}</a>
-        <button class="btn-danger" onclick="deleteCategory(event, ${category.id})">Delete</button>
-      </li>
-    `).join('') : '<li>No categories yet</li>';
-  });
+/**
+ * Formats note content with line breaks
+ * @param {string} content - Note content
+ * @returns {string} Formatted content
+ */
+function formatNoteContent(content) {
+  return content.replace(/\n/g, '<br>');
 }
+
+/**
+ * Formats date for display
+ * @param {string} dateString - ISO date string
+ * @returns {string} Formatted date
+ */
+function formatDate(dateString) {
+  const options = { 
+    year: 'numeric', 
+    month: 'short', 
+    day: 'numeric',
+    hour: '2-digit', 
+    minute: '2-digit' 
+  };
+  return new Date(dateString).toLocaleString(undefined, options);
+}
+
+/**
+ * Shows a toast notification
+ * @param {string} message - Message to display
+ * @param {string} type - Type of notification (success, error, warning, info)
+ */
+function showToast(message, type = 'info') {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `
+    <div class="toast-message">${message}</div>
+  `;
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.classList.add('show');
+    setTimeout(() => {
+      toast.remove();
+    }, 3000);
+  }, 100);
+}
+
+// Make functions available globally
+window.fetchNotes = fetchNotes;
+window.handleAddNote = handleAddNote;
+window.handleUpdateNote = handleUpdateNote;
+window.deleteNote = deleteNote;
+window.loadBookNotes = loadBookNotes;
+window.loadNoteForm = loadNoteForm;
+window.loadEditNoteForm = loadEditNoteForm;
