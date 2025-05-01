@@ -1,5 +1,4 @@
-// Configuration
-const API_BASE_URL = 'https://backend-cpn2.onrender.com';
+
 
 // DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
