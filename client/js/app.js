@@ -537,20 +537,26 @@ async function fetchNotes(bookId) {
 }
 
 // UI update functions
-async function loadCategories() {
-  const categories = await fetchCategories();
-  const categoriesList = document.getElementById('categories-list');
-  
-  if (categories.length === 0) {
-    categoriesList.innerHTML = '<li>No categories yet</li>';
-  } else {
-    categoriesList.innerHTML = categories.map(category => `
-      <li>
-        <a href="#" onclick="loadBooksByCategory(${category.id})">${category.name}</a>
-        <button class="btn-danger" onclick="deleteCategory(event, ${category.id})">Delete</button>
-      </li>
-    `).join('');
+// In your app.js frontend code
+function loadCategories() {
+  const container = document.getElementById('categories-container');
+  if (!container) {
+    console.error('Categories container not found');
+    return;
   }
+
+  apiClient.request('/api/categories')
+    .then(categories => {
+      container.innerHTML = categories.map(cat => `
+        <div class="category">
+          <h3>${cat.name}</h3>
+        </div>
+      `).join('');
+    })
+    .catch(error => {
+      console.error('Failed to fetch categories:', error);
+      container.innerHTML = '<p class="error">Failed to load categories</p>';
+    });
 }
 
 async function loadBooks() {
