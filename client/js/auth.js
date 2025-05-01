@@ -288,4 +288,7 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
     },
     loadBookForm: function() {
       // Implement your book form loading logic
-     
+      if (elements.mainContent) elements.mainContent.innerHTML = '<h2>Book Form</h2>';
+    }
+  };
+})();
