@@ -1,22 +1,15 @@
 [build]
-  command = "npm run build"  
-  publish = "client"         
-  base = ""                 
+  publish = "client"   # Points to your static files folder
+  command = ""         # No build step needed
 
-
-[build.environment]
-  NODE_VERSION = "18"        
-  REACT_APP_API_URL = "https://backend-cpn2.onrender.com" 
-
-
-[dev]
-  framework = "#custom"      
-  command = "npm run dev"    
-  targetPort = 3000           
-  publish = "client"         
-
-
+# For single-page apps (like React Router)
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Optional: Development settings
+[dev]
+  framework = "#static"
+  command = "echo 'No dev server needed for static site'"
+  targetPort = 3000    # Only used if you add a live-server later
