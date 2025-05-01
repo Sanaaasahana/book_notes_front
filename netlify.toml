@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = "client"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/server/:splat"
+  status = 200
+
+[dev]
+  framework = "#custom"
+  command = "npm run dev"
+  targetPort = 5000
+  publish = "client"
