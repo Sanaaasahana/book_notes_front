@@ -12,7 +12,8 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
   const state = {
     currentUser: null,
     get user() {
-      return this.currentUser || JSON.parse(localStorage.getItem('user'));
+      const userData = localStorage.getItem('user');
+      return this.currentUser || (userData ? JSON.parse(userData) : null);
     },
     set user(userData) {
       this.currentUser = userData;
@@ -34,8 +35,7 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
   function checkAuth() {
     const token = localStorage.getItem('token');
     try {
-      if (token) {
-        state.user = JSON.parse(localStorage.getItem('user'));
+      if (token && state.user) {
         showAuthenticatedViews();
         loadDashboard();
         return;
@@ -54,27 +54,26 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
     state.user = null;
   }
 
-  // View Management with debouncing
-  const viewManager = {
-    showAuthenticatedViews() {
-      document.querySelectorAll('.auth-only').forEach(el => {
-        el?.style.setProperty('display', 'block', 'important');
-      });
-      document.querySelectorAll('.guest-only').forEach(el => {
-        el?.style.setProperty('display', 'none', 'important');
-      });
-    },
-    showUnauthenticatedViews() {
-      document.querySelectorAll('.auth-only').forEach(el => {
-        el?.style.setProperty('display', 'none', 'important');
-      });
-      document.querySelectorAll('.guest-only').forEach(el => {
-        el?.style.setProperty('display', 'block', 'important');
-      });
-    }
-  };
+  // View Management
+  function showAuthenticatedViews() {
+    document.querySelectorAll('.auth-only').forEach(el => {
+      if (el) el.style.display = 'block';
+    });
+    document.querySelectorAll('.guest-only').forEach(el => {
+      if (el) el.style.display = 'none';
+    });
+  }
 
-  // Enhanced API Client
+  function showUnauthenticatedViews() {
+    document.querySelectorAll('.auth-only').forEach(el => {
+      if (el) el.style.display = 'none';
+    });
+    document.querySelectorAll('.guest-only').forEach(el => {
+      if (el) el.style.display = 'block';
+    });
+  }
+
+  // Enhanced API Client with CORS handling
   const apiClient = {
     async request(endpoint, { method = 'GET', body, headers = {} } = {}) {
       const url = `${window.API_BASE_URL}${endpoint}`;
@@ -84,7 +83,8 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
           'Content-Type': 'application/json',
           ...headers
         },
-        credentials: 'include'
+        credentials: 'include',
+        mode: 'cors'
       };
 
       if (body) config.body = JSON.stringify(body);
@@ -92,17 +92,17 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
       try {
         const response = await fetch(url, config);
         
-        if (!response.ok) {
-          const error = new Error(`HTTP error! status: ${response.status}`);
-          error.response = response;
-          throw error;
+        // Handle CORS preflight errors
+        if (response.status === 0) {
+          throw new Error('CORS policy blocked the request');
         }
 
-        const contentType = response.headers.get('content-type');
-        if (contentType?.includes('application/json')) {
-          return await response.json();
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
         }
-        return await response.text();
+
+        return await response.json();
       } catch (error) {
         console.error(`API Error at ${endpoint}:`, error);
         throw error;
@@ -130,14 +130,14 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
       localStorage.setItem('token', data.token);
       state.user = data.user;
       setupNavigation();
-      viewManager.showAuthenticatedViews();
+      showAuthenticatedViews();
       loadDashboard();
       showAlert('Login successful!', 'success');
     } catch (error) {
-      const message = error.response?.status === 401 
-        ? 'Invalid credentials' 
-        : 'Login failed. Please try again.';
-      showAlert(message, 'error');
+      showAlert(error.message.includes('CORS') 
+        ? 'Connection error. Please try again later.' 
+        : 'Invalid credentials', 
+      'error');
     }
   }
 
@@ -166,14 +166,16 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
       localStorage.setItem('token', data.token);
       state.user = data.user;
       setupNavigation();
-      viewManager.showAuthenticatedViews();
+      showAuthenticatedViews();
       loadDashboard();
       showAlert('Registration successful!', 'success');
     } catch (error) {
-      const message = error.response?.status === 409 
-        ? 'User already exists' 
-        : 'Registration failed. Please try again.';
-      showAlert(message, 'error');
+      showAlert(
+        error.message.includes('CORS') ? 'Connection error' :
+        error.message.includes('409') ? 'User already exists' :
+        'Registration failed. Please try again.',
+        'error'
+      );
     }
   }
 
@@ -190,34 +192,39 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
     } finally {
       clearAuthState();
       setupNavigation();
-      viewManager.showUnauthenticatedViews();
+      showUnauthenticatedViews();
       loadLogin();
     }
   }
 
   // UI Helpers
   function showAlert(message, type = 'info') {
-    // Implement your alert system (could be toast notifications)
-    alert(`${type.toUpperCase()}: ${message}`);
+    // Replace with your actual alert/notification system
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type}`;
+    alertDiv.textContent = message;
+    document.body.appendChild(alertDiv);
+    setTimeout(() => alertDiv.remove(), 3000);
   }
 
   function setupNavigation() {
     if (!elements.nav) return;
     
     elements.nav.innerHTML = state.user ? `
-      <a href="#" onclick="loadDashboard()">Dashboard</a>
-      <a href="#" onclick="loadBookForm()">Add Book</a>
-      <a href="#" onclick="logout()">Logout</a>
+      <a href="#" onclick="authModule.loadDashboard()">Dashboard</a>
+      <a href="#" onclick="authModule.loadBookForm()">Add Book</a>
+      <a href="#" onclick="authModule.logout()">Logout</a>
       <span>Welcome, ${state.user.username}</span>
     ` : `
-      <a href="#" onclick="loadLogin()">Login</a>
-      <a href="#" onclick="loadRegister()">Register</a>
+      <a href="#" onclick="authModule.loadLogin()">Login</a>
+      <a href="#" onclick="authModule.loadRegister()">Register</a>
     `;
   }
 
-  // UI Loaders with template caching
-  const templates = {
-    login: `
+  // UI Loaders
+  function loadLogin() {
+    if (!elements.mainContent) return;
+    elements.mainContent.innerHTML = `
       <div class="auth-form">
         <h2>Login</h2>
         <form id="login-form">
@@ -231,10 +238,15 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
           </div>
           <button type="submit">Login</button>
         </form>
-        <p>Don't have an account? <a href="#" onclick="loadRegister()">Register</a></p>
+        <p>Don't have an account? <a href="#" onclick="authModule.loadRegister()">Register</a></p>
       </div>
-    `,
-    register: `
+    `;
+    document.getElementById('login-form')?.addEventListener('submit', handleLogin);
+  }
+
+  function loadRegister() {
+    if (!elements.mainContent) return;
+    elements.mainContent.innerHTML = `
       <div class="auth-form">
         <h2>Register</h2>
         <form id="register-form">
@@ -252,20 +264,9 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
           </div>
           <button type="submit">Register</button>
         </form>
-        <p>Already have an account? <a href="#" onclick="loadLogin()">Login</a></p>
+        <p>Already have an account? <a href="#" onclick="authModule.loadLogin()">Login</a></p>
       </div>
-    `
-  };
-
-  function loadLogin() {
-    if (!elements.mainContent) return;
-    elements.mainContent.innerHTML = templates.login;
-    document.getElementById('login-form')?.addEventListener('submit', handleLogin);
-  }
-
-  function loadRegister() {
-    if (!elements.mainContent) return;
-    elements.mainContent.innerHTML = templates.register;
+    `;
     document.getElementById('register-form')?.addEventListener('submit', handleRegister);
   }
 
@@ -281,6 +282,14 @@ window.API_BASE_URL = window.API_BASE_URL || (function() {
     logout,
     loadLogin,
     loadRegister,
+    loadDashboard: function() {
+      // Implement your dashboard loading logic
+      if (elements.mainContent) elements.mainContent.innerHTML = '<h2>Dashboard</h2>';
+    },
+    loadBookForm: function() {
+      // Implement your book form loading logic
+      if (elements.mainContent) elements.mainContent.innerHTML = '<h2>Add Book</h2>';
+    },
     get currentUser() { return state.user; }
   };
 })();
