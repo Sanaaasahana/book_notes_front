@@ -1,11 +1,12 @@
-// Remove any duplicate API_BASE_URL declaration (it's now in app.js)
-// Use window.API_BASE_URL instead of declaring it here
-
+// Use global API base from app.js
 // Book-related functions
+
 async function fetchBooks() {
   try {
     const response = await fetch(`${window.API_BASE_URL}/api/books`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
     });
     return response.ok ? await response.json() : [];
   } catch (error) {
@@ -17,7 +18,9 @@ async function fetchBooks() {
 async function fetchBooksByCategory(categoryId) {
   try {
     const response = await fetch(`${window.API_BASE_URL}/api/books/category/${categoryId}`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
     });
     return response.ok ? await response.json() : [];
   } catch (error) {
@@ -33,7 +36,7 @@ async function loadBooks() {
 
 function updateBooksGrid(books) {
   const booksGrid = document.getElementById('books-grid');
-  
+
   if (!booksGrid) {
     console.error('Books grid element not found');
     return;
@@ -47,8 +50,8 @@ function updateBooksGrid(books) {
         <h3>${book.title}</h3>
         <p>by ${book.author}</p>
         ${book.category_name ? `<p>Category: ${book.category_name}</p>` : ''}
-        <span class="book-status status-${book.status.replace(' ', '-')}">${book.status}</span>
-        ${book.rating ? `<p>Rating: ${'★'.repeat(book.rating)}${'☆'.repeat(5 - book.rating)}</p>` : ''}
+        <span class="book-status status-${book.status?.replace(' ', '-')}">${book.status}</span>
+        ${book.rating != null ? `<p>Rating: ${'★'.repeat(book.rating)}${'☆'.repeat(5 - book.rating)}</p>` : ''}
         <div class="book-actions">
           <button onclick="loadBookForm(${book.id})">Edit</button>
           <button onclick="loadBookNotes(${book.id})">Notes</button>
@@ -61,12 +64,13 @@ function updateBooksGrid(books) {
 
 async function handleAddBook(e) {
   e.preventDefault();
+
   const bookData = {
-    title: document.getElementById('book-title').value,
-    author: document.getElementById('book-author').value,
-    categoryId: document.getElementById('book-category').value,
-    status: document.getElementById('book-status').value,
-    rating: document.getElementById('book-rating').value
+    title: document.getElementById('book-title')?.value.trim(),
+    author: document.getElementById('book-author')?.value.trim(),
+    categoryId: parseInt(document.getElementById('book-category')?.value),
+    status: document.getElementById('book-status')?.value,
+    rating: parseInt(document.getElementById('book-rating')?.value)
   };
 
   try {
@@ -80,26 +84,28 @@ async function handleAddBook(e) {
     });
 
     if (response.ok) {
-      loadDashboard();
+      loadDashboard?.();
     } else {
       const error = await response.json();
-      alert(error.message || 'Failed to add book');
+      showToast(error.message || 'Failed to add book', 'error');
     }
   } catch (error) {
     console.error('Add book error:', error);
-    alert('Failed to add book');
+    showToast('Failed to add book', 'error');
   }
 }
 
 async function handleUpdateBook(e) {
   e.preventDefault();
-  const bookId = document.getElementById('book-id').value;
+
+  const bookId = document.getElementById('book-id')?.value;
+
   const bookData = {
-    title: document.getElementById('book-title').value,
-    author: document.getElementById('book-author').value,
-    categoryId: document.getElementById('book-category').value,
-    status: document.getElementById('book-status').value,
-    rating: document.getElementById('book-rating').value
+    title: document.getElementById('book-title')?.value.trim(),
+    author: document.getElementById('book-author')?.value.trim(),
+    categoryId: parseInt(document.getElementById('book-category')?.value),
+    status: document.getElementById('book-status')?.value,
+    rating: parseInt(document.getElementById('book-rating')?.value)
   };
 
   try {
@@ -113,39 +119,58 @@ async function handleUpdateBook(e) {
     });
 
     if (response.ok) {
-      loadDashboard();
+      loadDashboard?.();
     } else {
       const error = await response.json();
-      alert(error.message || 'Failed to update book');
+      showToast(error.message || 'Failed to update book', 'error');
     }
   } catch (error) {
     console.error('Update book error:', error);
-    alert('Failed to update book');
+    showToast('Failed to update book', 'error');
   }
 }
 
 async function deleteBook(bookId) {
   if (!confirm('Are you sure you want to delete this book?')) return;
-  
+
   try {
     const response = await fetch(`${window.API_BASE_URL}/api/books/${bookId}`, {
       method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
     });
 
     if (response.ok) {
-      loadDashboard();
+      loadDashboard?.();
     } else {
       const error = await response.json();
-      alert(error.message || 'Failed to delete book');
+      showToast(error.message || 'Failed to delete book', 'error');
     }
   } catch (error) {
     console.error('Delete book error:', error);
-    alert('Failed to delete book');
+    showToast('Failed to delete book', 'error');
   }
 }
 
-// Make functions available globally
+// Optional: Toast for feedback
+function showToast(message, type = 'info') {
+  let toast = document.querySelector('.toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    document.body.appendChild(toast);
+  }
+
+  toast.className = `toast ${type} show`;
+  toast.textContent = message;
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3000);
+}
+
+// Expose functions globally
 window.fetchBooks = fetchBooks;
 window.fetchBooksByCategory = fetchBooksByCategory;
 window.loadBooks = loadBooks;
