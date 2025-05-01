@@ -11,7 +11,16 @@ window.API_BASE_URL = window.API_BASE_URL || (() => {
     currentUser: null,
     get user() {
       const userData = localStorage.getItem('user');
-      return this.currentUser || (userData ? JSON.parse(userData) : null);
+      if (this.currentUser) return this.currentUser;
+
+      try {
+        if (!userData || userData === 'undefined') return null;
+        return JSON.parse(userData);
+      } catch (e) {
+        console.error('Error parsing user data from localStorage:', e);
+        localStorage.removeItem('user');
+        return null;
+      }
     },
     set user(userData) {
       this.currentUser = userData;
@@ -28,7 +37,6 @@ window.API_BASE_URL = window.API_BASE_URL || (() => {
     mainContent: document.getElementById('main-content')
   };
 
-  // Authentication Functions
   async function checkAuth() {
     const token = localStorage.getItem('token');
     try {
@@ -75,7 +83,6 @@ window.API_BASE_URL = window.API_BASE_URL || (() => {
     });
   }
 
-  // Enhanced API Client
   const apiClient = {
     async request(endpoint, { method = 'GET', body, headers = {} } = {}) {
       const url = `${window.API_BASE_URL}${endpoint}`;
@@ -131,7 +138,7 @@ window.API_BASE_URL = window.API_BASE_URL || (() => {
       showAlert(
         error.message.includes('CORS') ? 'Connection error. Please try again later.' :
         error.message.includes('Invalid credentials') ? 'Invalid email or password.' :
-        'Login failed. Please try again later.', 
+        error.message || 'Login failed. Please try again later.', 
         'error'
       );
     }
@@ -169,7 +176,7 @@ window.API_BASE_URL = window.API_BASE_URL || (() => {
       showAlert(
         error.message.includes('CORS') ? 'Connection error. Please try again later.' :
         error.message.includes('User already exists') ? 'User already exists. Please login.' :
-        'Registration failed. Please try again.', 
+        error.message || 'Registration failed. Please try again later.', 
         'error'
       );
     }
