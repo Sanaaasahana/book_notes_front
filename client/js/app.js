@@ -22,19 +22,21 @@ function checkAuth() {
 
 function setupNavigation() {
   const nav = document.getElementById('nav');
-  
+  const user = JSON.parse(localStorage.getItem('user'));
+
   nav.innerHTML = `
-    ${currentUser ? `
+    ${user ? `
       <a href="#" onclick="loadDashboard()">Dashboard</a>
       <a href="#" onclick="loadBookForm()">Add Book</a>
       <a href="#" onclick="logout()">Logout</a>
-      <span>Welcome, ${currentUser.username}</span>
+      <span>Welcome, ${user.username}</span>
     ` : `
       <a href="#" onclick="loadLogin()">Login</a>
       <a href="#" onclick="loadRegister()">Register</a>
     `}
   `;
 }
+
 
 function showAuthenticatedViews() {
   document.querySelectorAll('.auth-only').forEach(el => el.style.display = 'block');
